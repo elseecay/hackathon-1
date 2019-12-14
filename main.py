@@ -8,6 +8,8 @@ import math
 from pathlib import Path
 import pdf2image
 import pytesseract
+import random
+import string
 
 
 def apply_threshold(gray_img):
@@ -108,6 +110,10 @@ def line_to_symbols(line):
             cnt = 1
             char_img = cv2.copyMakeBorder(line[:, white_column_indexes[i - 1] + 1:white_column_indexes[i]], 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=255)
             result.append(pytesseract.image_to_string(get_blur_img(char_img), 'rus', config="--psm 7 --oem 3"))
+    if len(result) and result[0] == ' ':
+        del result[0];
+    if len(result) and result[-1] == ' ':
+        del result[-1]
     return result
 
 
@@ -115,12 +121,67 @@ def get_page_km(page_img) -> int:
     line = page_img[2020:2105, 1490:1515]
     line = cv2.rotate(line, cv2.ROTATE_90_COUNTERCLOCKWISE)
     chars = line_to_symbols(line)
-    return int(''.join(chars))
+    try:
+        return int(''.join(chars))
+    except:
+        return None
 
 
-jpgs = pdf_to_images('01_январь.pdf')
-for i in range(5, 15):
-    print(get_page_km(jpgs[i]))
+def random_string(length=10):
+    letters = string.ascii_lowercase
+    return ''.join(random.choice(letters) for i in range(length))
+
+
+def save_pdf_bytearray(pdf: bytearray) -> str:
+    name = random_string()
+    with open(f'{name}.pdf', 'wb') as f:
+        f.write(pdf)
+    return f'{name}.pdf'
+
+
+def get_ush_row(splitted):
+    if len(splitted) != 6:
+        return None
+    if splitted[1] != 'УШ':
+        return None
+    result = {'type': 'BRD'}
+    names = {0: 'meter', 1: 'type', 2: 'main_val', 3: 'val1', 4:'val2', 5: 'val3'}
+    indexes = [0, 2, 3, 4, 5]
+    for i in indexes:
+        try:
+            result[names[i]] = int(splitted[i])
+        except:
+            return None
+    return result
+
+
+def analyze_pdf(pdf_path):
+    result = []
+    pages = pdf_to_images(pdf_path, f'./{random_string()}')
+    for p in pages:
+        lines = crop_image_to_lines(p)
+        for line_index, l in enumerate(lines):
+            if line_index >= len(lines) - 2:
+                continue
+            splitted = ''.join(line_to_symbols(l)).upper().split(' ')
+            ush_row = get_ush_row(splitted)
+            km = get_page_km(p)
+            if not ush_row or not km:
+                continue
+            ush_row['meter'] += km * 1000
+            result.append(ush_row)
+    return result
+
+
+x = analyze_pdf('01_январь.pdf')
+print(x)
+
+#for i in analyze_pdf('01_январь.pdf'):
+#    print(i)
+
+#jpgs = pdf_to_images('01_январь.pdf')
+#for i in range(5, 15):
+#    print(get_page_km(jpgs[i]))
 # lines = crop_image_to_lines(jpgs[0])
 # for i in range(1, 11):
 #     chars = line_to_symbols(lines[i])
